@@ -20,9 +20,21 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 
 app = Flask(__name__)
 
-APP_VERSION = os.environ.get("APP_VERSION", "v1")
-FAIL_RATE = float(os.environ.get("FAIL_RATE", "0"))
 HOSTNAME = socket.gethostname()
+
+
+# Read live rather than cached at import time. In production this doesn't
+# matter -- a new revision means a new pod, which re-imports this module
+# anyway -- but it's what lets the test suite flip these with plain
+# monkeypatch.setenv() instead of importlib.reload()-ing this module, which
+# would otherwise try to re-register the Counter/Histogram below into
+# prometheus_client's global registry a second time and blow up.
+def _app_version() -> str:
+    return os.environ.get("APP_VERSION", "v1")
+
+
+def _fail_rate() -> float:
+    return float(os.environ.get("FAIL_RATE", "0"))
 
 REQUEST_COUNT = Counter(
     "shrtn_requests_total",
@@ -47,10 +59,11 @@ def _start_timer():
 def _record_metrics(response):
     from flask import g, request
 
+    version = _app_version()
     elapsed = time.monotonic() - getattr(g, "start_time", time.monotonic())
-    REQUEST_LATENCY.labels(path=request.path, version=APP_VERSION).observe(elapsed)
+    REQUEST_LATENCY.labels(path=request.path, version=version).observe(elapsed)
     REQUEST_COUNT.labels(
-        path=request.path, status=response.status_code, version=APP_VERSION
+        path=request.path, status=response.status_code, version=version
     ).inc()
     return response
 
@@ -60,11 +73,11 @@ def index():
     # This is the "business logic" whose regression FAIL_RATE simulates --
     # in a real service this would be a payment call, a DB write, whatever
     # actually has a failure mode worth canarying against.
-    if random.random() < FAIL_RATE:  # noqa: S311 -- failure injection, not crypto
-        return jsonify(error="simulated failure", version=APP_VERSION, pod=HOSTNAME), 500
+    if random.random() < _fail_rate():  # noqa: S311 -- failure injection, not crypto
+        return jsonify(error="simulated failure", version=_app_version(), pod=HOSTNAME), 500
     return jsonify(
         message="hello from the canary demo",
-        version=APP_VERSION,
+        version=_app_version(),
         pod=HOSTNAME,
     )
 
@@ -75,7 +88,7 @@ def healthz():
     # "bad" canary still passes its Kubernetes probes and only gets caught
     # by the rollout's traffic-based analysis. A canary that fails its own
     # health check would never even receive traffic to prove the point.
-    return jsonify(status="ok", version=APP_VERSION), 200
+    return jsonify(status="ok", version=_app_version()), 200
 
 
 @app.route("/metrics")

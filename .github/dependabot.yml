@@ -1,17 +1,27 @@
 version: 2
 updates:
+  # A cooldown makes Dependabot wait N days after a version is published
+  # before proposing it -- a freshly-published release (or a compromised
+  # one) doesn't get pulled in on day one. Semgrep's p/ci ruleset flags a
+  # missing cooldown as a real, actionable finding, not a stylistic one.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
