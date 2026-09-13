@@ -40,11 +40,16 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
+      # Invoked via `bash script.sh` rather than `./script.sh` on purpose --
+      # git on Windows (NTFS has no Unix executable bit) doesn't preserve
+      # the +x mode these scripts had when committed from a Windows
+      # checkout, so relying on it fails with "Permission denied" (exit
+      # 126) regardless of what chmod was run wherever the repo originated.
       - name: Set up the cluster (kind + ingress-nginx + Argo Rollouts)
-        run: ./scripts/setup-cluster.sh
+        run: bash scripts/setup-cluster.sh
 
       - name: Run the canary rollout demo (build image, promote-on-good, abort-on-bad)
-        run: ./scripts/demo-canary.sh
+        run: bash scripts/demo-canary.sh
         env:
           IMAGE_REF: canary-demo:${{ github.sha }}
 
