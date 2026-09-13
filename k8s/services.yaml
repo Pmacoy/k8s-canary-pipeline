@@ -1,0 +1,27 @@
+# Argo Rollouts owns the `role`/pod-template-hash selector on both of these
+# at runtime -- it repoints canary-demo-canary at the new ReplicaSet and
+# canary-demo-stable at the last-promoted one as the rollout progresses. We
+# only declare the app-level selector; the controller does the rest.
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-demo-stable
+  namespace: canary-demo
+spec:
+  selector:
+    app: canary-demo
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-demo-canary
+  namespace: canary-demo
+spec:
+  selector:
+    app: canary-demo
+  ports:
+    - port: 80
+      targetPort: 8080

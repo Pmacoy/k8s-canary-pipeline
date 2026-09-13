@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app tests
+      - run: mypy app
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest
+
+  manifest-check:
+    name: Kubernetes manifests build cleanly (kustomize)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install kubectl
+        run: |
+          curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+      # `kubectl kustomize` is pure client-side rendering -- no cluster, no
+      # kubeconfig, no CRD schema needed. It's the same command every script
+      # in this repo uses to build the manifests, so a failure here (a bad
+      # reference, a malformed patch, YAML that doesn't parse) is caught
+      # before canary-e2e.yml ever spends time booting a real cluster.
+      # Schema-level correctness against the real Argo Rollouts/Ingress CRDs
+      # is what canary-e2e.yml itself verifies, against a live cluster.
+      - name: Render the manifests and sanity-check the output
+        run: |
+          kubectl kustomize k8s > /tmp/rendered.yaml
+          test -s /tmp/rendered.yaml
+          pip install --quiet pyyaml
+          python3 -c "
+          import sys, yaml
+          docs = list(yaml.safe_load_all(open('/tmp/rendered.yaml')))
+          docs = [d for d in docs if d]
+          assert docs, 'kustomize produced no documents'
+          kinds = sorted(d.get('kind') for d in docs)
+          print(f'{len(docs)} documents rendered: {kinds}')
+          for want in ('Rollout', 'AnalysisTemplate', 'Ingress'):
+              assert want in kinds, f'expected a {want} in the rendered output'
+          "

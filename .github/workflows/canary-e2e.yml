@@ -1,0 +1,65 @@
+name: Canary E2E
+
+# This is the actual point of the repo: prove, on a real cluster, that a
+# healthy canary gets promoted automatically and a regressed one gets
+# aborted automatically -- not "these YAML files look right," but "this
+# rollout strategy, run for real, does the right thing in both directions."
+# scripts/demo-canary.sh does the proving; this workflow just gives it
+# somewhere real to run and fails the job if either assertion doesn't hold.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: canary-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  canary-rollout:
+    name: Run a real canary rollout (promote + abort)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install kubectl
+        run: |
+          curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Install kind
+        run: |
+          curl -fsSLo ./kind "https://kind.sigs.k8s.io/dl/v0.26.0/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Set up the cluster (kind + ingress-nginx + Argo Rollouts)
+        run: ./scripts/setup-cluster.sh
+
+      - name: Run the canary rollout demo (build image, promote-on-good, abort-on-bad)
+        run: ./scripts/demo-canary.sh
+        env:
+          IMAGE_REF: canary-demo:${{ github.sha }}
+
+      - name: Dump rollout + pod state (always, for debugging)
+        if: always()
+        run: |
+          echo "### kubectl argo rollouts get rollout ###"
+          kubectl argo rollouts get rollout canary-demo -n canary-demo --no-color || true
+          echo "### Pods ###"
+          kubectl -n canary-demo get pods -o wide || true
+          echo "### Rollout events ###"
+          kubectl -n canary-demo get events --sort-by=.lastTimestamp || true
+          echo "### AnalysisRuns ###"
+          kubectl -n canary-demo get analysisruns -o yaml || true
+
+      - name: Tear down the cluster
+        if: always()
+        run: kind delete cluster --name canary-demo || true

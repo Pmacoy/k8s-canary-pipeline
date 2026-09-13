@@ -1,0 +1,20 @@
+# Standard "ingress-nginx on kind" recipe: a single node that actually
+# binds host ports 80/443, so the ingress controller's NodePort service is
+# reachable from outside the cluster without any port-forwarding.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

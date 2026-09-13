@@ -1,0 +1,32 @@
+# The automated judge. Argo Rollouts pauses the rollout after the first
+# setWeight step, runs this query every 15s against the live Prometheus
+# we deployed in prometheus.yaml, and only proceeds to setWeight: 50 if
+# the canary revision's own success rate clears 95%. Two consecutive
+# failures (failureLimit: 2) aborts the rollout and rolls traffic back to
+# 0% on the canary automatically -- see scripts/demo-canary.sh for a
+# revision that's deliberately built to trip this.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: canary-demo
+spec:
+  args:
+    - name: revision-hash
+  metrics:
+    - name: success-rate
+      interval: 15s
+      count: 4
+      successCondition: result[0] >= 0.95
+      failureLimit: 2
+      # No requests yet in a brand-new revision's first interval is
+      # expected, not a failure -- inconclusive lets Argo Rollouts wait
+      # for the next sample instead of burning a failureLimit strike on it.
+      inconclusiveLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.canary-demo.svc.cluster.local:9090
+          query: |
+            sum(rate(shrtn_requests_total{rollouts_pod_template_hash="{{args.revision-hash}}",status!~"5.."}[1m]))
+            /
+            sum(rate(shrtn_requests_total{rollouts_pod_template_hash="{{args.revision-hash}}"}[1m]))

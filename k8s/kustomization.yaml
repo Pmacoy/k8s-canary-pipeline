@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - prometheus.yaml
+  - services.yaml
+  - ingress.yaml
+  - analysis-template.yaml
+  - rollout.yaml
+images:
+  # `kustomize edit set image app-image=ghcr.io/<owner>/<repo>:<tag>` is how
+  # every script/workflow in this repo points the Rollout at a real,
+  # already-built image without hand-editing rollout.yaml.
+  - name: app-image
+    newName: app-image
+    newTag: latest

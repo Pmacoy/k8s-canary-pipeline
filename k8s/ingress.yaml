@@ -1,0 +1,27 @@
+# This is the ONLY Ingress we declare. Argo Rollouts' nginx traffic router
+# (spec.strategy.canary.trafficRouting.nginx.stableIngress in rollout.yaml)
+# creates and owns a second, companion Ingress
+# (canary-demo-canary) itself, toggling its
+# nginx.ingress.kubernetes.io/canary-weight annotation as each setWeight
+# step runs. We never touch that one directly -- editing it by hand would
+# just get overwritten on the next reconcile.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canary-demo
+  namespace: canary-demo
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: canary.demo.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: canary-demo-stable
+                port:
+                  number: 80
