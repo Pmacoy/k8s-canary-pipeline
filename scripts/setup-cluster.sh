@@ -39,7 +39,17 @@ kubectl wait --namespace ingress-nginx \
 
 echo "==> Installing Argo Rollouts controller"
 kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+# --server-side is required here, not optional: Argo Rollouts' CRDs carry a
+# large enough OpenAPI schema that a normal `kubectl apply` -- which stores
+# the whole previous config in a kubectl.kubernetes.io/last-applied-
+# configuration annotation -- blows past Kubernetes' 256KiB annotation
+# limit ("Too long: may not be more than 262144 bytes"). Server-side apply
+# tracks changes via managed fields instead of that annotation, which is
+# exactly what avoids the problem; --force-conflicts lets a re-run of this
+# script against an existing cluster take ownership back cleanly.
+kubectl apply --server-side --force-conflicts \
+  -n argo-rollouts \
+  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
 kubectl wait --namespace argo-rollouts \
   --for=condition=available deployment/argo-rollouts \
   --timeout=180s
